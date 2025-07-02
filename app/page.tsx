@@ -1,6 +1,7 @@
 'use client'
 
 import { createClient } from '@/utils/supabase/client'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
@@ -8,6 +9,7 @@ interface Post {
   id: string
   user_id: string
   body: string
+  image_url?: string
   created_at: string
   profiles: {
     name: string
@@ -22,6 +24,8 @@ interface Profile {
 export default function FacebookWall() {
   const [posts, setPosts] = useState<Post[]>([])
   const [message, setMessage] = useState('')
+  const [selectedImage, setSelectedImage] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isPosting, setIsPosting] = useState(false)
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null)
@@ -83,18 +87,102 @@ export default function FacebookWall() {
     return `${Math.floor(diffInMinutes / 1440)}d`
   }
 
+  // Handle image selection
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      // Check file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        alert('File size must be less than 5MB')
+        return
+      }
+      
+      // Check file type
+      if (!file.type.startsWith('image/')) {
+        alert('Please select an image file')
+        return
+      }
+      
+      setSelectedImage(file)
+      
+      // Create preview
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setImagePreview(e.target?.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  // Remove selected image
+  const removeImage = () => {
+    setSelectedImage(null)
+    setImagePreview(null)
+  }
+
+  // Upload image to Supabase Storage
+  const uploadImage = async (file: File): Promise<string | null> => {
+    try {
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
+      const filePath = `posts/${fileName}`
+
+      console.log('Uploading file:', fileName, 'Size:', file.size, 'Type:', file.type)
+
+      const { data, error: uploadError } = await supabase.storage
+        .from('wall-photos')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        })
+
+      if (uploadError) {
+        console.error('Upload error:', uploadError)
+        alert(`Upload failed: ${uploadError.message}`)
+        return null
+      }
+
+      console.log('Upload successful:', data)
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('wall-photos')
+        .getPublicUrl(filePath)
+
+      console.log('Public URL:', urlData.publicUrl)
+      return urlData.publicUrl
+    } catch (error) {
+      console.error('Error uploading image:', error)
+      alert(`Upload error: ${error}`)
+      return null
+    }
+  }
+
   // Post new message
   const handlePost = async () => {
-    if (!message.trim() || isPosting || !currentProfile) return
+    if ((!message.trim() && !selectedImage) || isPosting || !currentProfile) return
 
     setIsPosting(true)
     try {
+      let imageUrl = null
+      
+      // Upload image if selected
+      if (selectedImage) {
+        imageUrl = await uploadImage(selectedImage)
+        if (!imageUrl) {
+          alert('Failed to upload photo. Please try again.')
+          setIsPosting(false)
+          return
+        }
+      }
+
       const { error } = await supabase
         .from('posts')
         .insert([
           {
             user_id: currentProfile.id,
             body: message.trim(),
+            image_url: imageUrl,
             created_at: new Date().toISOString()
           }
         ])
@@ -105,6 +193,8 @@ export default function FacebookWall() {
       }
 
       setMessage('')
+      setSelectedImage(null)
+      setImagePreview(null)
     } catch (error) {
       console.error('Error:', error)
     } finally {
@@ -196,7 +286,7 @@ export default function FacebookWall() {
     <div className="min-h-screen bg-white">
       {/* Blue Header */}
       <div className="bg-[#3b5998] text-white px-4 py-2 flex justify-between items-center">
-        <h1 className="text-sm font-normal">Wall</h1>
+        <h1 className="text-md font-normal">Wall</h1>
         <button 
           onClick={handleLogout}
           className="text-xs bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded"
@@ -224,10 +314,10 @@ export default function FacebookWall() {
           {/* Navigation Links */}
           <div className="mt-6 space-y-2">
             <div className="text-sm text-[#3b5998] cursor-pointer hover:underline">Information</div>
-            <div className="text-sm text-gray-600">Networks</div>
-            <div className="text-sm text-gray-600">Stanford Alum</div>
-            <div className="text-sm text-gray-600">Current City</div>
-            <div className="text-sm text-gray-600">Palo Alto, CA</div>
+            <div className="text-sm font-bold text-gray-600">Networks</div>
+            <div className="text-sm ml-1 text-gray-600">Stanford Alum</div>
+            <div className="text-sm font-bold text-gray-600">Current City</div>
+            <div className="text-sm ml-1 text-gray-600">Palo Alto, CA</div>
           </div>
         </div>
 
@@ -250,11 +340,43 @@ export default function FacebookWall() {
                   maxLength={280}
                   disabled={isPosting}
                 />
-                <div className="text-xs text-gray-500 mt-1">{280 - message.length} characters remaining</div>
+                
+                {/* Image Preview */}
+                {imagePreview && (
+                  <div className="mt-2 relative">
+                    <Image
+                      src={imagePreview} 
+                      alt="Preview" 
+                      className="max-w-xs max-h-48 rounded border"
+                    />
+                    <button
+                      onClick={removeImage}
+                      className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-red-600"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+                
+                <div className="flex items-center justify-between mt-1">
+                  <div className="text-xs text-gray-500">{280 - message.length} characters remaining</div>
+                  
+                  {/* Photo Upload Button */}
+                  <label className="cursor-pointer text-[#3b5998] hover:text-[#365899] text-sm">
+                    📷 Photo
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageSelect}
+                      className="hidden"
+                      disabled={isPosting}
+                    />
+                  </label>
+                </div>
               </div>
               <button 
                 onClick={handlePost}
-                disabled={!message.trim() || isPosting}
+                disabled={(!message.trim() && !selectedImage) || isPosting}
                 className="bg-gray-200 text-gray-700 px-4 py-1 rounded text-sm hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isPosting ? 'Posting...' : 'Share'}
@@ -280,7 +402,16 @@ export default function FacebookWall() {
                         {formatTimestamp(post.created_at)}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-800">{post.body}</p>
+                    {post.body && <p className="text-sm text-gray-800 mb-2">{post.body}</p>}
+                    {post.image_url && (
+                      <div className="mt-2">
+                        <Image 
+                          src={post.image_url} 
+                          alt="Post image" 
+                          className="max-w-full max-h-96 rounded border object-cover"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               ))
