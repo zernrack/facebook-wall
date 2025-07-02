@@ -19,6 +19,7 @@ interface Post {
 interface Profile {
   id: string
   name: string
+  location?: string
 }
 
 export default function FacebookWall() {
@@ -314,10 +315,8 @@ export default function FacebookWall() {
           {/* Navigation Links */}
           <div className="mt-6 space-y-2">
             <div className="text-sm text-[#3b5998] cursor-pointer hover:underline">Information</div>
-            <div className="text-sm font-bold text-gray-600">Networks</div>
-            <div className="text-sm ml-1 text-gray-600">Stanford Alum</div>
             <div className="text-sm font-bold text-gray-600">Current City</div>
-            <div className="text-sm ml-1 text-gray-600">Palo Alto, CA</div>
+            <div className="text-sm ml-1 text-gray-600">{currentProfile.location || 'Not specified'}</div>
           </div>
         </div>
 

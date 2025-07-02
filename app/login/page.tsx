@@ -6,6 +6,7 @@ import { useState } from 'react'
 
 export default function LoginPage() {
   const [name, setName] = useState('')
+  const [location, setLocation] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const router = useRouter()
@@ -16,6 +17,11 @@ export default function LoginPage() {
     
     if (!name.trim()) {
       setError('Please enter your name')
+      return
+    }
+
+    if (!location.trim()) {
+      setError('Please enter your location')
       return
     }
 
@@ -45,6 +51,7 @@ export default function LoginPage() {
           .insert([
             {
               name: name.trim(),
+              location: location.trim(),
               created_at: new Date().toISOString()
             }
           ])
@@ -58,12 +65,21 @@ export default function LoginPage() {
         }
 
         profileId = newProfile.id
+      } else {
+        // Update existing profile with location if it doesn't have one
+        if (!existingProfile.location) {
+          await supabase
+            .from('profiles')
+            .update({ location: location.trim() })
+            .eq('id', existingProfile.id)
+        }
       }
 
       // Store profile in localStorage for simple session management
       localStorage.setItem('currentProfile', JSON.stringify({
         id: profileId,
-        name: name.trim()
+        name: name.trim(),
+        location: location.trim()
       }))
 
       // Redirect to main page
@@ -100,13 +116,28 @@ export default function LoginPage() {
             />
           </div>
 
+          <div>
+            <label htmlFor="location" className="block text-sm font-medium text-gray-700 mb-2">
+              Location
+            </label>
+            <input
+              type="text"
+              id="location"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3b5998] focus:border-transparent"
+              placeholder="e.g., Palo Alto, CA"
+              disabled={isLoading}
+            />
+          </div>
+
           {error && (
             <div className="text-red-500 text-sm text-center">{error}</div>
           )}
 
           <button
             type="submit"
-            disabled={isLoading || !name.trim()}
+            disabled={isLoading || !name.trim() || !location.trim()}
             className="w-full bg-[#3b5998] text-white py-3 rounded-lg font-medium hover:bg-[#365899] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {isLoading ? 'Signing in...' : 'Continue'}
